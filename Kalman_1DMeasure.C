@@ -126,14 +126,14 @@ void PrintTVectorD(TVectorD& A,ofstream& outFile){
 
 //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%//
 
-Double_t omega = 1;
-Double_t omega_sigma=0.1;
+Double_t omega = 2;
+Double_t omega_sigma=0.5;
 Double_t eta_sigma = 0.05;
 Double_t delta_sigma = 0.1;
 Double_t EX_0[4]={0,0,1,2};
 Double_t X_0_sigma = 0.1;
-Double_t T=0.1;
-Int_t N=100;
+Double_t T=0.01;
+Int_t N=200;
 
 Double_t t(Int_t k){
     return T*k;
@@ -203,10 +203,21 @@ TMatrixD get_P00(){
 TMatrixD K(Int_t k,TMatrixD **P){
     TMatrixD Kk(4,2);
     if(k<=0){
-        Kk = Phi_Filter(0)*P[0][0]*H(0).T()*(H(0)*P[0][0]*H(0).T()+R(0)).Invert();
+        Kk = Phi_Real(0)*P[0][0]*H(0).T()*(H(0)*P[0][0]*H(0).T()+R(0)).Invert();
     }
     else{
-        Kk = Phi_Filter(k)*P[k][k-1]*H(k).T()*(H(k)*P[k][k-1]*H(k).T()+R(k)).Invert();
+        Kk = Phi_Real(k)*P[k][k-1]*H(k).T()*(H(k)*P[k][k-1]*H(k).T()+R(k)).Invert();
+    }
+    return Kk;
+}
+
+TMatrixD K_1D(Int_t k,TMatrixD **P){
+    TMatrixD Kk(4,1);
+    if(k<=0){
+        Kk = Phi_Filter(0)*P[0][0]*H_1D(0).T()*(H_1D(0)*P[0][0]*H_1D(0).T()+R_1D(0)).Invert();
+    }
+    else{
+        Kk = Phi_Filter(k)*P[k][k-1]*H_1D(k).T()*(H_1D(k)*P[k][k-1]*H_1D(k).T()+R_1D(k)).Invert();
     }
     return Kk;
 }
@@ -228,6 +239,13 @@ TMatrixD R(Int_t k){
     return R_k;
 }
 
+TMatrixD R_1D(Int_t k){
+    TMatrixD R_k(1,1);
+    R_k.UnitMatrix();
+    R_k(0,0)=delta_sigma*delta_sigma;
+    return R_k;
+}
+
 TMatrixD H(Int_t k){
     Double_t H_0[4] = {1,0,0,0};
     Double_t H_1[4] = {0,1,0,0};
@@ -237,11 +255,27 @@ TMatrixD H(Int_t k){
     return H_42;
 }
 
+TMatrixD H_1D(Int_t k){
+    Double_t H_0[4] = {1,0,0,0};
+    TMatrixD H_41(1,4);
+    SetTMatrixDRow(H_41,0,H_0,4);
+    return H_41;
+}
+
 TVectorD delta(Int_t k){
     TVectorD delta_k(2);
     Double_t delta_0[2]={0,0};
     delta_0[0] = gRandom->Gaus(0,delta_sigma);
     delta_0[1] = gRandom->Gaus(0,delta_sigma);
+    delta_k.SetElements(delta_0);
+    return delta_k;
+}
+
+
+TVectorD delta_1D(Int_t k){
+    TVectorD delta_k(1);
+    Double_t delta_0[1]={0};
+    delta_0[0] = gRandom->Gaus(0,delta_sigma);
     delta_k.SetElements(delta_0);
     return delta_k;
 }
@@ -266,7 +300,7 @@ TVectorD X(Int_t k){
 
 //Int_t N=20;
 
-void Kalman(){
+void Kalman_1DMeasure(){
     ofstream outFile;
     //outFile.open("kalman_log.C",ios::app|ios::out);
     outFile.open("kalman_log.C",ios::out);
@@ -297,6 +331,12 @@ void Kalman(){
     for(Int_t k=0;k<N;k++){
         Z[k].ResizeTo(2);
         Z[k]=H(k)*X[k]+delta(k);
+    }
+
+    TVectorD* Z_1D = new TVectorD[N];
+    for(Int_t k=0;k<N;k++){
+        Z_1D[k].ResizeTo(1);
+        Z_1D[k]=H_1D(k)*X[k]+delta_1D(k);
     }
     
     outFile <<"//%%--Z[k]--%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%//"<<endl;
@@ -414,15 +454,74 @@ void Kalman(){
     grX_F->Draw("LP");
     c1->Modified();
 
+    // Do 1D-Measure Kalman Filter
+    TMatrixD **P_1D = new TMatrixD*[N]; //Row
+    for(Int_t m=0;m<N;m++){
+        P_1D[m] = new TMatrixD[N]; //Col
+    }
+    P_1D[0][0].ResizeTo(4,4);
+    P_1D[0][0]=get_P00();
+    P_1D[1][0].ResizeTo(4,4);
+    P_1D[1][0]=Phi_Filter(0)*P_1D[0][0]*Phi_Filter(0).T()-Phi_Filter(0)*P_1D[0][0]*H_1D(0).T()*(H_1D(0)*P_1D[0][0]*H_1D(0).T()+R_1D(0)).Invert()*H_1D(0)*P_1D[0][0]*Phi_Filter(0).T()+Q(0);
+    for(Int_t k=1;k<N-1;k++){
+        P_1D[k+1][k].ResizeTo(4,4);
+        P_1D[k+1][k]=Phi_Filter(k)*P_1D[k][k-1]*Phi_Filter(k).T()-Phi_Filter(k)*P_1D[k][k-1]*H_1D(k).T()*(H_1D(k)*P_1D[k][k-1]*H_1D(k).T()+R_1D(k)).Invert()*H_1D(k)*P_1D[k][k-1]*Phi_Filter(k).T()+Q(k);
+        cout<<k<<endl;
+    }
+
+    TVectorD **X_filter_1D = new TVectorD*[N]; //Row
+    for(Int_t m=0;m<N;m++){
+        X_filter_1D[m] = new TVectorD[N]; //Col
+    }
+    X_filter_1D[0][0].ResizeTo(4);
+    X_filter_1D[0][0].SetElements(EX_0);
+    X_filter_1D[1][0].ResizeTo(4);
+    X_filter_1D[1][0]=Phi_Filter(0)*X_filter_1D[0][0]+K_1D(0,P)*(Z_1D[0]-H_1D(0)*X_filter_1D[0][0]);
+    for(Int_t k=1;k<N-1;k++){
+        X_filter_1D[k+1][k].ResizeTo(4);
+        X_filter_1D[k+1][k]=Phi_Filter(k)*X_filter_1D[k][k-1]+K_1D(k,P)*(Z_1D[k]-H_1D(k)*X_filter_1D[k][k-1]);
+        cout<<k<<endl;
+    }
+
+    outFile<<"//%%--X_filter_1D[k]--%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%//"<<endl;
+
+    Double_t* X_filter_1D_x = new Double_t[N];
+    Double_t* X_filter_1D_y = new Double_t[N];
+    X_filter_1D_x[0]=X_filter_1D[0][0].GetMatrixArray()[0];
+    X_filter_1D_y[0]=X_filter_1D[0][0].GetMatrixArray()[1];
+    for(Int_t k=1;k<N;k++){
+        X_filter_1D_x[k] = X_filter_1D[k][k-1].GetMatrixArray()[0];
+        X_filter_1D_y[k] = X_filter_1D[k][k-1].GetMatrixArray()[1];
+        //cout<<k<<"   "<<x[k]/y[k]<<endl;
+        //cout<<X_filter_1D[k][k-1](0)<<endl;
+        outFile<<X_filter_1D[k][k-1].GetMatrixArray()[0]<<"    "<<X_filter_1D[k][k-1].GetMatrixArray()[1]<<"    "<<X_filter_1D[k][k-1].GetMatrixArray()[2]<<"    "<<X_filter_1D[k][k-1].GetMatrixArray()[3]<<endl;
+    }
+
+    auto grX_F_1D = new TGraph(N,X_filter_1D_x,X_filter_1D_y);
+    //TColor * mycolor = TColor();
+    //mycolor->SetRGB(0.5,0.5,0.5);// r,g,b  0~1
+    grX_F_1D->SetLineColor(5);
+    grX_F_1D->SetMarkerColor(5);
+    grX_F_1D->SetMarkerStyle(7);
+    grX_F_1D->SetMarkerSize(1);
+    //grX_F_1D->SetTitle("Kalman Filter");
+    //grX_F_1D->GetXaxis()->SetTitle("x");
+    //grX_F_1D->GetYaxis()->SetTitle("y");
+    //grX_F_1D->Draw("CP");
+    grX_F_1D->Draw("LP");
+    c1->Modified();
+
+////////////////////////
     TLegend leg(0.7,0.8,0.9,0.9);
     leg.SetFillColor(0);
     //cout<<"hhh"<<endl;
     leg.AddEntry(grX,"Real Point","p");
     leg.AddEntry(grZ,"Measurement Point","p");
     leg.AddEntry(grX_F,"Estimate Point","p");
+    leg.AddEntry(grX_F_1D,"1D-Measure Estimate Point","p");
     //leg.AddEntry("","LISE","p");
     leg.DrawClone("Same");
-
+////////////////////////
 
     outFile <<"//%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%//"<<endl;
 
