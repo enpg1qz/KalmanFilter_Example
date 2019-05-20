@@ -14,9 +14,12 @@ Kalman_1DMeasure.C
 
 
 
+---5.11---
+
+Kalman.C :X(k/k - 1)(预测)，并给粒子实际运动时的磁场加了随机误差
 
 
-Kalman.C :X(k/k - 1)(预测)，并给粒子实际运动时的磁场加了
-随机误差
 Kalman_1DMeasure.C : 只测量x 坐标，进行对比
+
+
 Kalman_filter.C：X(k/N)(光滑)，与X(k/k - 1)(预测) 对比
