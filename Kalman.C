@@ -132,8 +132,8 @@ Double_t eta_sigma = 0.05;
 Double_t delta_sigma = 0.1;
 Double_t EX_0[4]={0,0,1,2};
 Double_t X_0_sigma = 0.1;
-Double_t T=0.1;
-Int_t N=100;
+Double_t T=0.05;
+Int_t N=200;
 
 Double_t t(Int_t k){
     return T*k;
@@ -268,8 +268,8 @@ TVectorD X(Int_t k){
 
 void Kalman(){
     ofstream outFile;
-    //outFile.open("kalman_log.C",ios::app|ios::out);
-    outFile.open("kalman_log.C",ios::out);
+    //outFile.open("Kalman_log.C",ios::app|ios::out);
+    outFile.open("Kalman_log.C",ios::out);
 
     delete gRandom;
     gRandom = new TRandom3(0); //seed=0
@@ -459,7 +459,7 @@ void Kalman(){
 
 
 
-    c1->SaveAs("kalman.root");
+    c1->SaveAs("Kalman.root");
     outFile.close();
 
 

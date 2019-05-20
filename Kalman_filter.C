@@ -126,15 +126,25 @@ void PrintTVectorD(TVectorD& A,ofstream& outFile){
 
 //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%//
 
-Double_t omega = 2;
-Double_t omega_sigma=0.5;
+Double_t omega = 1;  /////N*T*omega/Pi=圈数
+Double_t omega_sigma=0.1;
 Double_t eta_sigma = 0.05;
 Double_t delta_sigma = 0.1;
 Double_t EX_0[4]={0,0,1,2};
 Double_t X_0_sigma = 0.1;
-Double_t T=0.01;
-Int_t N=400;
+Double_t T=0.1;
+Int_t N=100;
 
+/*
+Double_t omega = 1;  /////N*T*omega/Pi=圈数
+Double_t omega_sigma=0.1;
+Double_t eta_sigma = 0.05;
+Double_t delta_sigma = 0.1;
+Double_t EX_0[4]={0,0,1,2};
+Double_t X_0_sigma = 0.1;
+Double_t T=0.03;
+Int_t N=300;
+*/
 Double_t t(Int_t k){
     return T*k;
 }
@@ -189,35 +199,46 @@ TVectorD get_X0(){
     return X0;
 }
 
-TMatrixD get_P00(){
-    TMatrixD P00(4,4);
-    P00.UnitMatrix();
-    P00(0,0)=0;
-    P00(1,1)=0;
-    P00(2,2)=X_0_sigma*X_0_sigma;
-    P00(3,3)=X_0_sigma*X_0_sigma;
-    return P00;
+TMatrixD get_P0(){   //即P(0/-1)
+    TMatrixD P0(4,4);
+    P0.UnitMatrix();
+    P0(0,0)=0;
+    P0(1,1)=0;
+    P0(2,2)=X_0_sigma*X_0_sigma;
+    P0(3,3)=X_0_sigma*X_0_sigma;
+    return P0;
 }
 
 
-TMatrixD K(Int_t k,TMatrixD **P){
+TMatrixD K_1(Int_t k,TMatrixD **P){
     TMatrixD Kk(4,2);
     if(k<=0){
-        Kk = Phi_Real(0)*P[0][0]*H(0).T()*(H(0)*P[0][0]*H(0).T()+R(0)).Invert();
+        Kk = Phi_Filter(0)*get_P0()*H(0).T()*(H(0)*get_P0()*H(0).T()+R(0)).Invert();
     }
     else{
-        Kk = Phi_Real(k)*P[k][k-1]*H(k).T()*(H(k)*P[k][k-1]*H(k).T()+R(k)).Invert();
+        Kk = Phi_Filter(k)*P[k][k-1]*H(k).T()*(H(k)*P[k][k-1]*H(k).T()+R(k)).Invert();
     }
     return Kk;
 }
 
-TMatrixD K_1D(Int_t k,TMatrixD **P){
-    TMatrixD Kk(4,1);
+TMatrixD K_2(Int_t k,TMatrixD **P){
+    TMatrixD Kk(4,2);
     if(k<=0){
-        Kk = Phi_Filter(0)*P[0][0]*H_1D(0).T()*(H_1D(0)*P[0][0]*H_1D(0).T()+R_1D(0)).Invert();
+        Kk = get_P0()*H(0).T()*(H(0)*get_P0()*H(0).T()+R(0)).Invert();
     }
     else{
-        Kk = Phi_Filter(k)*P[k][k-1]*H_1D(k).T()*(H_1D(k)*P[k][k-1]*H_1D(k).T()+R_1D(k)).Invert();
+        Kk = P[k][k-1]*H(k).T()*(H(k)*P[k][k-1]*H(k).T()+R(k)).Invert();
+    }
+    return Kk;
+}
+
+TMatrixD K_3(Int_t k,TMatrixD **P){
+    TMatrixD Kk(4,4);
+    if(k<0){
+        cout<<"error:K_3():k<0"<<endl;
+    }
+    else{
+        Kk = P[k][k]*Phi_Filter(k).T()*P[k+1][k].Invert();
     }
     return Kk;
 }
@@ -239,13 +260,6 @@ TMatrixD R(Int_t k){
     return R_k;
 }
 
-TMatrixD R_1D(Int_t k){
-    TMatrixD R_k(1,1);
-    R_k.UnitMatrix();
-    R_k(0,0)=delta_sigma*delta_sigma;
-    return R_k;
-}
-
 TMatrixD H(Int_t k){
     Double_t H_0[4] = {1,0,0,0};
     Double_t H_1[4] = {0,1,0,0};
@@ -255,27 +269,11 @@ TMatrixD H(Int_t k){
     return H_42;
 }
 
-TMatrixD H_1D(Int_t k){
-    Double_t H_0[4] = {1,0,0,0};
-    TMatrixD H_41(1,4);
-    SetTMatrixDRow(H_41,0,H_0,4);
-    return H_41;
-}
-
 TVectorD delta(Int_t k){
     TVectorD delta_k(2);
     Double_t delta_0[2]={0,0};
     delta_0[0] = gRandom->Gaus(0,delta_sigma);
     delta_0[1] = gRandom->Gaus(0,delta_sigma);
-    delta_k.SetElements(delta_0);
-    return delta_k;
-}
-
-
-TVectorD delta_1D(Int_t k){
-    TVectorD delta_k(1);
-    Double_t delta_0[1]={0};
-    delta_0[0] = gRandom->Gaus(0,delta_sigma);
     delta_k.SetElements(delta_0);
     return delta_k;
 }
@@ -300,10 +298,10 @@ TVectorD X(Int_t k){
 
 //Int_t N=20;
 
-void Kalman_1DMeasure(){
+void Kalman_filter(){
     ofstream outFile;
-    //outFile.open("Kalman_1DMeasure_log.C",ios::app|ios::out);
-    outFile.open("Kalman_1DMeasure_log.C",ios::out);
+    //outFile.open("Kalman_filter_log.C",ios::app|ios::out);
+    outFile.open("Kalman_filter_log.C",ios::out);
 
     delete gRandom;
     gRandom = new TRandom3(0); //seed=0
@@ -323,7 +321,7 @@ void Kalman_1DMeasure(){
     for(Int_t k=0;k<N;k++){
         X_x[k] = X[k][0];
         X_y[k] = X[k][1];
-        //cout<<k<<"   "<<x[k]/y[k]<<endl;
+        ////cout<<k<<"   "<<x[k]/y[k]<<endl;
         outFile <<X[k][0]<<"    "<<X[k][1]<<"    "<<X[k][2]<<"    "<<X[k][3]<<endl;
     }
 
@@ -331,12 +329,6 @@ void Kalman_1DMeasure(){
     for(Int_t k=0;k<N;k++){
         Z[k].ResizeTo(2);
         Z[k]=H(k)*X[k]+delta(k);
-    }
-
-    TVectorD* Z_1D = new TVectorD[N];
-    for(Int_t k=0;k<N;k++){
-        Z_1D[k].ResizeTo(1);
-        Z_1D[k]=H_1D(k)*X[k]+delta_1D(k);
     }
     
     outFile <<"//%%--Z[k]--%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%//"<<endl;
@@ -346,12 +338,12 @@ void Kalman_1DMeasure(){
     for(Int_t k=0;k<N;k++){
         Z_x[k] = Z[k][0];
         Z_y[k] = Z[k][1];
-        //cout<<k<<"   "<<x[k]/y[k]<<endl;
+        ////cout<<k<<"   "<<x[k]/y[k]<<endl;
         outFile<<Z[k][0]<<"    "<<Z[k][1]<<endl;
     }
 
-    auto c1 = new TCanvas("c1","c1",0,0,620,650);
-    c1->SetCanvasSize(600, 600);
+    auto c1 = new TCanvas("c1","c1",0,0,900,900);
+    c1->SetCanvasSize(800, 800);
     c1->SetFixedAspectRatio(kTRUE);
     auto grX = new TGraph(N,X_x,X_y);
     grX->SetLineColor(1);
@@ -402,40 +394,39 @@ void Kalman_1DMeasure(){
     for(Int_t m=0;m<N;m++){
         P[m] = new TMatrixD[N]; //Col
     }
-    P[0][0].ResizeTo(4,4);
-    P[0][0]=get_P00();
     P[1][0].ResizeTo(4,4);
-    P[1][0]=Phi_Filter(0)*P[0][0]*Phi_Filter(0).T()-Phi_Filter(0)*P[0][0]*H(0).T()*(H(0)*P[0][0]*H(0).T()+R(0)).Invert()*H(0)*P[0][0]*Phi_Filter(0).T()+Q(0);
+    P[1][0]=Phi_Filter(0)*get_P0()*Phi_Filter(0).T()-Phi_Filter(0)*get_P0()*H(0).T()*(H(0)*get_P0()*H(0).T()+R(0)).Invert()*H(0)*get_P0()*Phi_Filter(0).T()+Q(0);
     for(Int_t k=1;k<N-1;k++){
         P[k+1][k].ResizeTo(4,4);
         P[k+1][k]=Phi_Filter(k)*P[k][k-1]*Phi_Filter(k).T()-Phi_Filter(k)*P[k][k-1]*H(k).T()*(H(k)*P[k][k-1]*H(k).T()+R(k)).Invert()*H(k)*P[k][k-1]*Phi_Filter(k).T()+Q(k);
-        cout<<k<<endl;
+        //cout<<k<<endl;
     }
 
     TVectorD **X_filter = new TVectorD*[N]; //Row
     for(Int_t m=0;m<N;m++){
         X_filter[m] = new TVectorD[N]; //Col
     }
-    X_filter[0][0].ResizeTo(4);
-    X_filter[0][0].SetElements(EX_0);
+    TVectorD X_filter0;
+    X_filter0.ResizeTo(4);
+    X_filter0.SetElements(EX_0);
     X_filter[1][0].ResizeTo(4);
-    X_filter[1][0]=Phi_Filter(0)*X_filter[0][0]+K(0,P)*(Z[0]-H(0)*X_filter[0][0]);
+    X_filter[1][0]=Phi_Filter(0)*X_filter0+K_1(0,P)*(Z[0]-H(0)*X_filter0);
     for(Int_t k=1;k<N-1;k++){
         X_filter[k+1][k].ResizeTo(4);
-        X_filter[k+1][k]=Phi_Filter(k)*X_filter[k][k-1]+K(k,P)*(Z[k]-H(k)*X_filter[k][k-1]);
-        cout<<k<<endl;
+        X_filter[k+1][k]=Phi_Filter(k)*X_filter[k][k-1]+K_1(k,P)*(Z[k]-H(k)*X_filter[k][k-1]);
+        //cout<<k<<endl;
     }
 
     outFile<<"//%%--X_filter[k]--%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%//"<<endl;
 
     Double_t* X_filter_x = new Double_t[N];
     Double_t* X_filter_y = new Double_t[N];
-    X_filter_x[0]=X_filter[0][0].GetMatrixArray()[0];
-    X_filter_y[0]=X_filter[0][0].GetMatrixArray()[1];
+    X_filter_x[0]=X_filter0.GetMatrixArray()[0];
+    X_filter_y[0]=X_filter0.GetMatrixArray()[1];
     for(Int_t k=1;k<N;k++){
         X_filter_x[k] = X_filter[k][k-1].GetMatrixArray()[0];
         X_filter_y[k] = X_filter[k][k-1].GetMatrixArray()[1];
-        //cout<<k<<"   "<<x[k]/y[k]<<endl;
+        ////cout<<k<<"   "<<x[k]/y[k]<<endl;
         //cout<<X_filter[k][k-1](0)<<endl;
         outFile<<X_filter[k][k-1].GetMatrixArray()[0]<<"    "<<X_filter[k][k-1].GetMatrixArray()[1]<<"    "<<X_filter[k][k-1].GetMatrixArray()[2]<<"    "<<X_filter[k][k-1].GetMatrixArray()[3]<<endl;
     }
@@ -454,79 +445,78 @@ void Kalman_1DMeasure(){
     grX_F->Draw("LP");
     c1->Modified();
 
-    // Do 1D-Measure Kalman Filter
-    TMatrixD **P_1D = new TMatrixD*[N]; //Row
-    for(Int_t m=0;m<N;m++){
-        P_1D[m] = new TMatrixD[N]; //Col
-    }
-    P_1D[0][0].ResizeTo(4,4);
-    P_1D[0][0]=get_P00();
-    P_1D[1][0].ResizeTo(4,4);
-    P_1D[1][0]=Phi_Filter(0)*P_1D[0][0]*Phi_Filter(0).T()-Phi_Filter(0)*P_1D[0][0]*H_1D(0).T()*(H_1D(0)*P_1D[0][0]*H_1D(0).T()+R_1D(0)).Invert()*H_1D(0)*P_1D[0][0]*Phi_Filter(0).T()+Q(0);
-    for(Int_t k=1;k<N-1;k++){
-        P_1D[k+1][k].ResizeTo(4,4);
-        P_1D[k+1][k]=Phi_Filter(k)*P_1D[k][k-1]*Phi_Filter(k).T()-Phi_Filter(k)*P_1D[k][k-1]*H_1D(k).T()*(H_1D(k)*P_1D[k][k-1]*H_1D(k).T()+R_1D(k)).Invert()*H_1D(k)*P_1D[k][k-1]*Phi_Filter(k).T()+Q(k);
-        cout<<k<<endl;
-    }
 
-    TVectorD **X_filter_1D = new TVectorD*[N]; //Row
-    for(Int_t m=0;m<N;m++){
-        X_filter_1D[m] = new TVectorD[N]; //Col
-    }
-    X_filter_1D[0][0].ResizeTo(4);
-    X_filter_1D[0][0].SetElements(EX_0);
-    X_filter_1D[1][0].ResizeTo(4);
-    X_filter_1D[1][0]=Phi_Filter(0)*X_filter_1D[0][0]+K_1D(0,P)*(Z_1D[0]-H_1D(0)*X_filter_1D[0][0]);
-    for(Int_t k=1;k<N-1;k++){
-        X_filter_1D[k+1][k].ResizeTo(4);
-        X_filter_1D[k+1][k]=Phi_Filter(k)*X_filter_1D[k][k-1]+K_1D(k,P)*(Z_1D[k]-H_1D(k)*X_filter_1D[k][k-1]);
-        cout<<k<<endl;
-    }
-
-    outFile<<"//%%--X_filter_1D[k]--%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%//"<<endl;
-
-    Double_t* X_filter_1D_x = new Double_t[N];
-    Double_t* X_filter_1D_y = new Double_t[N];
-    X_filter_1D_x[0]=X_filter_1D[0][0].GetMatrixArray()[0];
-    X_filter_1D_y[0]=X_filter_1D[0][0].GetMatrixArray()[1];
+    ///// Do Kalman Filter 2 滤波
+    cout<<"LvBo"<<endl;
+    P[0][0].ResizeTo(4,4);
+    P[0][0] = get_P0()-get_P0()*H(0).T()*(H(0)*get_P0()*H(0).T()+R(0)).Invert()*H(0)*get_P0();
     for(Int_t k=1;k<N;k++){
-        X_filter_1D_x[k] = X_filter_1D[k][k-1].GetMatrixArray()[0];
-        X_filter_1D_y[k] = X_filter_1D[k][k-1].GetMatrixArray()[1];
-        //cout<<k<<"   "<<x[k]/y[k]<<endl;
-        //cout<<X_filter_1D[k][k-1](0)<<endl;
-        outFile<<X_filter_1D[k][k-1].GetMatrixArray()[0]<<"    "<<X_filter_1D[k][k-1].GetMatrixArray()[1]<<"    "<<X_filter_1D[k][k-1].GetMatrixArray()[2]<<"    "<<X_filter_1D[k][k-1].GetMatrixArray()[3]<<endl;
+        P[k][k].ResizeTo(4,4);
+        P[k][k] = P[k][k-1]-P[k][k-1]*H(k).T()*(H(k)*P[k][k-1]*H(k).T()+R(k)).Invert()*H(k)*P[k][k-1];
+        //cout<<k<<endl;
+    }
+    X_filter[0][0].ResizeTo(4);
+    X_filter[0][0]=X_filter0+K_2(0,P)*(Z[0]-H(0)*X_filter0);
+    for(Int_t k=1;k<N;k++){
+        X_filter[k][k].ResizeTo(4);
+        X_filter[k][k]=X_filter[k][k-1]+K_2(k,P)*(Z[k]-H(k)*X_filter[k][k-1]);
+        //cout<<k<<endl;
+    }
+    ///// Do Kalman Filter 3 光滑
+    cout<<"GuangHua"<<endl;
+    for(int k=N-2;k>=0;k--){
+        X_filter[k][N-1].ResizeTo(4);
+        X_filter[k][N-1]=X_filter[k][k]+K_3(k,P)*(X_filter[k+1][N-1]-Phi_Filter(k)*X_filter[k][k]);
     }
 
-    auto grX_F_1D = new TGraph(N,X_filter_1D_x,X_filter_1D_y);
+    Double_t* X_Filter_x_ = new Double_t[N];
+    Double_t* X_Filter_y_ = new Double_t[N];
+    for(Int_t k=0;k<N;k++){
+        X_Filter_x_[k] = X_filter[k][k].GetMatrixArray()[0];
+        X_Filter_y_[k] = X_filter[k][k].GetMatrixArray()[1];
+        ////cout<<k<<"   "<<x[k]/y[k]<<endl;
+        //cout<<X_filter[k][k-1](0)<<endl;
+        outFile<<X_filter[k][k].GetMatrixArray()[0]<<"    "<<X_filter[k][k].GetMatrixArray()[1]<<"    "<<X_filter[k][k].GetMatrixArray()[2]<<"    "<<X_filter[k][k].GetMatrixArray()[3]<<endl;
+    }
+
+    auto grX_Filter = new TGraph(N,X_Filter_x_,X_Filter_y_);
     //TColor * mycolor = TColor();
     //mycolor->SetRGB(0.5,0.5,0.5);// r,g,b  0~1
-    grX_F_1D->SetLineColor(5);
-    grX_F_1D->SetMarkerColor(5);
-    grX_F_1D->SetMarkerStyle(7);
-    grX_F_1D->SetMarkerSize(1);
-    //grX_F_1D->SetTitle("Kalman Filter");
-    //grX_F_1D->GetXaxis()->SetTitle("x");
-    //grX_F_1D->GetYaxis()->SetTitle("y");
-    //grX_F_1D->Draw("CP");
-    grX_F_1D->Draw("LP");
+    grX_Filter->SetLineColor(4);
+    grX_Filter->SetMarkerColor(4);
+    grX_Filter->SetMarkerStyle(7);
+    grX_Filter->SetMarkerSize(1);
+    //grX_Filter->SetTitle("Kalman Filter");
+    //grX_Filter->GetXaxis()->SetTitle("x");
+    //grX_Filter->GetYaxis()->SetTitle("y");
+    //grX_Filter->Draw("CP");
+    grX_Filter->Draw("LP");
     c1->Modified();
 
-////////////////////////
+
+
+
+
+
+
+
+
+
+
     TLegend leg(0.7,0.8,0.9,0.9);
     leg.SetFillColor(0);
     //cout<<"hhh"<<endl;
     leg.AddEntry(grX,"Real Point","p");
     leg.AddEntry(grZ,"Measurement Point","p");
     leg.AddEntry(grX_F,"Estimate Point","p");
-    leg.AddEntry(grX_F_1D,"1D-Measure Estimate Point","p");
-    //leg.AddEntry("","LISE","p");
+    leg.AddEntry(grX_Filter,"Finally Estimate Point","p");
     leg.DrawClone("Same");
-////////////////////////
+
 
     outFile <<"//%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%//"<<endl;
 
-    outFile<<"P[0][0]:"<<endl;
-    PrintTMatrixD(P[0][0],outFile);
+    outFile<<"get_P0():"<<endl;
+    PrintTMatrixD(get_P0(),outFile);
     outFile<<"P[1][0]:"<<endl;
     PrintTMatrixD(P[1][0],outFile);
     for(int k =1;k<TMath::Min(N-1,2);k++){
@@ -547,8 +537,8 @@ void Kalman_1DMeasure(){
 
         outFile<<"X_filter[k][k-1]:"<<endl;
         PrintTVectorD(X_filter[k][k-1],outFile);
-        outFile<<"K(k,P):"<<endl;
-        PrintTMatrixD(K(k,P),outFile);
+        outFile<<"K_1(k,P):"<<endl;
+        PrintTMatrixD(K_1(k,P),outFile);
         outFile<<"Z[k]:"<<endl;
         PrintTVectorD(Z[k],outFile);
         outFile<<"X_filter[k+1][k]:"<<endl;
@@ -558,7 +548,7 @@ void Kalman_1DMeasure(){
 
 
 
-    c1->SaveAs("Kalman_1DMeasure.root");
+    c1->SaveAs("Kalman_filter.root");
     outFile.close();
 
 
